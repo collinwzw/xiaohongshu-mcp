@@ -3,7 +3,6 @@ package main
 import (
 	"net/http"
 
-	"github.com/xpzouying/xiaohongshu-mcp/cookies"
 	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 
 	"github.com/gin-gonic/gin"
@@ -73,10 +72,8 @@ func (s *AppServer) deleteCookiesHandler(c *gin.Context) {
 		return
 	}
 
-	cookiePath := cookies.GetCookiesFilePath()
 	respondSuccess(c, map[string]interface{}{
-		"cookie_path": cookiePath,
-		"message":     "Cookies 已成功删除，登录状态已重置。下次操作时需要重新登录。",
+		"message": "Cookies 已成功删除，登录状态已重置。下次操作时需要重新登录。",
 	}, "删除 cookies 成功")
 }
 

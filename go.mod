@@ -4,6 +4,9 @@ go 1.24.0
 
 require (
 	github.com/avast/retry-go/v4 v4.7.0
+	github.com/aws/aws-sdk-go-v2 v1.36.3
+	github.com/aws/aws-sdk-go-v2/config v1.29.14
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-rod/rod v0.116.2
 	github.com/h2non/filetype v1.1.3

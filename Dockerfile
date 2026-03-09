@@ -2,9 +2,9 @@
 FROM golang:1.24 AS builder
 
 WORKDIR /src
-# 配置 Go 模块代理为国内源
-ENV GOPROXY=https://goproxy.cn,direct
-ENV GOSUMDB=sum.golang.google.cn
+# Go module proxy — use default (proxy.golang.org) for non-China builds
+# Set GOPROXY=https://goproxy.cn,direct for builds inside China
+ENV GOPROXY=https://proxy.golang.org,direct
 
 COPY go.mod go.sum ./
 RUN go mod download

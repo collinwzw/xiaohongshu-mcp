@@ -11,6 +11,7 @@ import (
 
 type browserConfig struct {
 	binPath string
+	cookier cookies.Cookier
 }
 
 type Option func(*browserConfig)
@@ -18,6 +19,13 @@ type Option func(*browserConfig)
 func WithBinPath(binPath string) Option {
 	return func(c *browserConfig) {
 		c.binPath = binPath
+	}
+}
+
+// WithCookier sets a custom cookie store (e.g. S3-backed) for the browser.
+func WithCookier(c cookies.Cookier) Option {
+	return func(cfg *browserConfig) {
+		cfg.cookier = c
 	}
 }
 
@@ -54,15 +62,17 @@ func NewBrowser(headless bool, options ...Option) *headless_browser.Browser {
 		logrus.Infof("Using proxy: %s", maskProxyCredentials(proxy))
 	}
 
-	// 加载 cookies
-	cookiePath := cookies.GetCookiesFilePath()
-	cookieLoader := cookies.NewLoadCookie(cookiePath)
+	// 加载 cookies — use injected cookier if provided, otherwise default
+	cookier := cfg.cookier
+	if cookier == nil {
+		cookier = cookies.NewCookier()
+	}
 
-	if data, err := cookieLoader.LoadCookies(); err == nil {
+	if data, err := cookier.LoadCookies(); err == nil {
 		opts = append(opts, headless_browser.WithCookies(string(data)))
-		logrus.Debugf("loaded cookies from filesuccessfully")
+		logrus.Infof("Loaded cookies successfully (%d bytes)", len(data))
 	} else {
-		logrus.Warnf("failed to load cookies: %v", err)
+		logrus.Warnf("Failed to load cookies: %v", err)
 	}
 
 	return headless_browser.New(opts...)

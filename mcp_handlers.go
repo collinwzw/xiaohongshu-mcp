@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/xpzouying/xiaohongshu-mcp/cookies"
+	"github.com/xpzouying/xiaohongshu-mcp/pkg/s3upload"
 	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 )
 
@@ -86,14 +86,13 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 		return now.Add(d).Format("2006-01-02 15:04:05")
 	}()
 
-	// 已登录：文本 + 图片
+	// Return QR code as data URI in text so it flows through the agent's response
+	// as standard markdown. The Claude Agent SDK doesn't reliably pass MCP image
+	// content blocks to PostToolUse hooks, but text content works everywhere.
+	b64Data := strings.TrimPrefix(result.Img, "data:image/png;base64,")
+	qrDataURI := "data:image/png;base64," + b64Data
 	contents := []MCPContent{
-		{Type: "text", Text: "请用小红书 App 在 " + deadline + " 前扫码登录 👇"},
-		{
-			Type:     "image",
-			MimeType: "image/png",
-			Data:     strings.TrimPrefix(result.Img, "data:image/png;base64,"),
-		},
+		{Type: "text", Text: fmt.Sprintf("请用小红书 App 在 %s 前扫码登录\n\n![QR Code](%s)", deadline, qrDataURI)},
 	}
 	return &MCPToolResult{Content: contents}
 }
@@ -110,8 +109,7 @@ func (s *AppServer) handleDeleteCookies(ctx context.Context) *MCPToolResult {
 		}
 	}
 
-	cookiePath := cookies.GetCookiesFilePath()
-	resultText := fmt.Sprintf("Cookies 已成功删除，登录状态已重置。\n\n删除的文件路径: %s\n\n下次操作时，需要重新登录。", cookiePath)
+	resultText := "Cookies 已成功删除，登录状态已重置。\n\n下次操作时，需要重新登录。"
 	return &MCPToolResult{
 		Content: []MCPContent{{
 			Type: "text",
@@ -740,5 +738,67 @@ func (s *AppServer) handleReplyComment(ctx context.Context, args map[string]inte
 			Type: "text",
 			Text: responseText,
 		}},
+	}
+}
+
+// handleDownloadMedia downloads images/videos from URLs and uploads them to S3.
+func (s *AppServer) handleDownloadMedia(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	logrus.Info("MCP: 下载媒体文件到 S3")
+
+	urlsInterface, _ := args["urls"].([]interface{})
+	if len(urlsInterface) == 0 {
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: "下载失败: 缺少 urls 参数"}},
+			IsError: true,
+		}
+	}
+
+	feedID, _ := args["feed_id"].(string)
+	if feedID == "" {
+		feedID = "unknown"
+	}
+
+	uploader, err := s3upload.NewUploader()
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: "S3 初始化失败: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	var results []string
+	var errors []string
+
+	for i, u := range urlsInterface {
+		url, ok := u.(string)
+		if !ok || url == "" {
+			continue
+		}
+
+		filename := s3upload.GuessFilename(url, fmt.Sprintf("%s_%d", feedID, i), i)
+		result, err := uploader.DownloadAndUpload(ctx, url, feedID+"/"+filename)
+		if err != nil {
+			logrus.Errorf("Failed to download media %s: %v", url, err)
+			errors = append(errors, fmt.Sprintf("Failed: %s (%s)", url, err.Error()))
+			continue
+		}
+
+		results = append(results, fmt.Sprintf("✅ %s → %s (%s, %d bytes)", url, result.S3URL, result.ContentType, result.Size))
+	}
+
+	var text string
+	if len(results) > 0 {
+		text = fmt.Sprintf("下载完成: %d/%d 成功\n\n%s", len(results), len(urlsInterface), strings.Join(results, "\n"))
+	}
+	if len(errors) > 0 {
+		text += "\n\n失败:\n" + strings.Join(errors, "\n")
+	}
+	if text == "" {
+		text = "没有有效的 URL"
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{Type: "text", Text: text}},
+		IsError: len(errors) > 0 && len(results) == 0,
 	}
 }

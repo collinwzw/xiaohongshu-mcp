@@ -443,7 +443,30 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	logrus.Infof("Registered %d MCP tools", 13)
+	// 工具 14: 下载媒体到 S3
+	type DownloadMediaArgs struct {
+		URLs   []string `json:"urls" jsonschema:"媒体文件 URL 列表（图片或视频的直链地址）"`
+		FeedID string   `json:"feed_id,omitempty" jsonschema:"关联的笔记 ID，用于 S3 路径组织（可选）"`
+	}
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "download_media",
+			Description: "将小红书笔记中的图片或视频下载并上传到 S3 存储，返回 S3 URL。需要设置 S3_MEDIA_BUCKET 环境变量",
+			Annotations: &mcp.ToolAnnotations{
+				Title: "Download Media to S3",
+			},
+		},
+		withPanicRecovery("download_media", func(ctx context.Context, req *mcp.CallToolRequest, args DownloadMediaArgs) (*mcp.CallToolResult, any, error) {
+			argsMap := map[string]interface{}{
+				"urls":    convertStringsToInterfaces(args.URLs),
+				"feed_id": args.FeedID,
+			}
+			result := appServer.handleDownloadMedia(ctx, argsMap)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	logrus.Infof("Registered %d MCP tools", 14)
 }
 
 // convertToMCPResult 将自定义的 MCPToolResult 转换为官方 SDK 的格式
